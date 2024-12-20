@@ -12,11 +12,15 @@ use rsa::{traits::PublicKeyParts, BigUint, Oaep, RsaPrivateKey, RsaPublicKey};
 use std::{
     fs::File,
     io::{Read, Write},
-    os::unix::fs::MetadataExt,
     rc::Rc,
     sync::Mutex,
     time::SystemTime,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 
 use wnfs::{
     common::{BlockStore, Metadata, CODEC_RAW},
@@ -374,6 +378,7 @@ impl<'a> PrivateDirectoryHelper<'a> {
         store: FFIFriendlyBlockStore<'a>,
         forest_cid: Cid,
     ) -> Result<Rc<HamtForest>, String> {
+        trace!("load_private_forest called with {:?}", forest_cid);
         // Deserialize private forest from the blockstore.
         let forest = store.get_deserializable::<HamtForest>(&forest_cid).await;
         if forest.is_ok() {
@@ -411,7 +416,11 @@ impl<'a> PrivateDirectoryHelper<'a> {
             let metadata_res = std::fs::metadata(&filename);
             if metadata_res.is_ok() {
                 let metadata = metadata_res.ok().unwrap();
-                let modification_time_seconds = metadata.mtime();
+                let modification_time = metadata.modified().unwrap_or(SystemTime::now());
+                let modification_time_seconds = modification_time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
 
                 let mut buffer = vec![0; metadata.len() as usize];
                 f.ok().unwrap().read(&mut buffer).expect("buffer overflow");
@@ -1217,3 +1226,5 @@ impl ExchangeKey for PublicExchangeKey {
 
 #[cfg(test)]
 mod private_forest_tests;
+#[cfg(test)]
+mod private_forest_tests2;
